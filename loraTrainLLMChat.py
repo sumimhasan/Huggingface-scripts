@@ -96,19 +96,19 @@ set_seed(config["seed"])
 
 # --- Device Setup ---
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"🚀 Using device: {device}")
+print(f"Using device: {device}")
 if device.type == "cuda":
     print(f"    GPU: {torch.cuda.get_device_name(0)}")
 
 # --- Load Tokenizer ---
-print(f"📥 Loading tokenizer for '{config['model_name']}'...")
+print(f"Loading tokenizer for '{config['model_name']}'...")
 tokenizer = AutoTokenizer.from_pretrained(config["model_name"])
 # Ensure the tokenizer has a pad token
 if tokenizer.pad_token is None:
     tokenizer.pad_token = tokenizer.eos_token
 
 # --- Load Dataset ---
-print(f"📂 Loading dataset from '{config['dataset_path']}'...")
+print(f"Loading dataset from '{config['dataset_path']}'...")
 # Assuming the dataset is a JSON file with a list of examples
 # Each example might look like:
 # {"instruction": "Summarize the following text...", "input": "...", "output": "..."}
@@ -117,7 +117,7 @@ print(f"📂 Loading dataset from '{config['dataset_path']}'...")
 
 # Load using Hugging Face Datasets library [[11]]
 raw_datasets = load_dataset('json', data_files=config['dataset_path'], split='train')
-print(f"📊 Dataset loaded with {len(raw_datasets)} examples.")
+print(f"Dataset loaded with {len(raw_datasets)} examples.")
 
 # --- Format Dataset ---
 def format_example(example):
@@ -163,7 +163,7 @@ def tokenize_function(example):
 
 print("Tokenizing dataset...")
 tokenized_datasets = lm_datasets.map(tokenize_function, batched=True, remove_columns=lm_datasets.column_names)
-print("✅ Dataset preparation complete.")
+print("Dataset preparation complete.")
 
 
 # ## 5. Model Loading and LoRA Setup
@@ -171,7 +171,7 @@ print("✅ Dataset preparation complete.")
 
 # %%
 # --- Load Model ---
-print(f"🧠 Loading model '{config['model_name']}'...")
+print(f"Loading model '{config['model_name']}'...")
 # Consider using `load_in_8bit=True` or `load_in_4bit=True` with `bitsandbytes` for lower memory usage
 model = AutoModelForCausalLM.from_pretrained(
     config["model_name"],
@@ -180,7 +180,7 @@ model = AutoModelForCausalLM.from_pretrained(
     # load_in_8bit=True, # Example for 8-bit quantization (requires bitsandbytes)
 )
 model = model.to(device)
-print(f"✅ Model loaded on {next(model.parameters()).device}")
+print(f"Model loaded on {next(model.parameters()).device}")
 
 # --- Prepare Model for LoRA ---
 # If using quantization (load_in_8bit/load_in_4bit), prepare the model first
@@ -195,7 +195,7 @@ lora_config = LoraConfig(
     bias="none", # Bias type for Lora. Can be 'none', 'all' or 'lora_only'
     task_type="CAUSAL_LM", # Task type for the model [[5]]
 )
-print("🔧 Applying LoRA configuration...")
+print(" Applying LoRA configuration...")
 model = get_peft_model(model, lora_config)
 model.print_trainable_parameters() # Print the number of trainable parameters
 
@@ -229,7 +229,7 @@ training_args = TrainingArguments(
 data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
 # --- Initialize Trainer ---
-print("🏋️ Initializing SFT Trainer...")
+print("Initializing SFT Trainer...")
 trainer = SFTTrainer(
     model=model,
     args=training_args,
@@ -242,14 +242,14 @@ trainer = SFTTrainer(
 )
 
 # --- Start Training ---
-print("🚀 Starting training...")
+print("Starting training...")
 trainer.train()
 
 # --- Save Final Model ---
 print(f"💾 Saving final model to '{config['output_dir']}'...")
 trainer.save_model(config["output_dir"]) # This saves the LoRA adapters and config
 tokenizer.save_pretrained(config["output_dir"]) # Save the tokenizer as well
-print("🎉 Training complete!")
+print("Training complete!")
 
 
 # ## 7. (Optional) Merging LoRA Adapters
@@ -267,5 +267,5 @@ print("🎉 Training complete!")
 # merged_model_path = f"{config['output_dir']}-merged"
 # model.save_pretrained(merged_model_path)
 # tokenizer.save_pretrained(merged_model_path)
-# print(f"🔗 LoRA adapters merged. Merged model saved to '{merged_model_path}'")
+# print(f" LoRA adapters merged. Merged model saved to '{merged_model_path}'")
 
