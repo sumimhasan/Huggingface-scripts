@@ -2,61 +2,72 @@
 # Hugging Face Chat Template — Interactive with History
 # ============================================================
 
-# Install required packages (quietly, only once)
+# ------------------------------
+# Install required packages (if needed)
+# ------------------------------
 # !pip install -q transformers accelerate
 
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, pipeline
+import json
 
-# ------------------------------
+
+# ============================================================
 # Device Setup — EXPLICIT CUDA
-# ------------------------------
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"🚀 Using device: {device}")
-if device.type == "cuda":
-    print(f"    GPU: {torch.cuda.get_device_name(0)}")
-    print(f"    Memory Allocated: {torch.cuda.memory_allocated(0) / 1024**2:.2f} MB")
+# ============================================================
+def setup_device():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"🚀 Using device: {device}")
+    if device.type == "cuda":
+        print(f"    GPU: {torch.cuda.get_device_name(0)}")
+        print(f"    Memory Allocated: {torch.cuda.memory_allocated(0) / 1024**2:.2f} MB")
+    return device
 
-# ------------------------------
-# Settings
-# ------------------------------
-model_name = "EleutherAI/gpt-neo-125M"  # change to bigger model if VRAM allows
-system_prompt = "You are a helpful AI assistant. Answer clearly and politely."
 
-print(f"📥 Loading tokenizer for '{model_name}'...")
-tokenizer = AutoTokenizer.from_pretrained(model_name)
+# ============================================================
+# Model + Tokenizer Loading
+# ============================================================
+def load_model_and_tokenizer(model_name: str, device):
+    print(f"📥 Loading tokenizer for '{model_name}'...")
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
 
-print(f"🧠 Loading model '{model_name}' in float16...")
-model = AutoModelForCausalLM.from_pretrained(
-    model_name,
-    torch_dtype=torch.float16 if device.type == "cuda" else torch.float32,
-)
+    print(f"🧠 Loading model '{model_name}'...")
+    model = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        torch_dtype=torch.float16 if device.type == "cuda" else torch.float32,
+    )
+    model = model.to(device)
+    print(f"✅ Model moved to {next(model.parameters()).device}")
 
-model = model.to(device)
-print(f"✅ Model moved to {next(model.parameters()).device}")
+    if device.type == "cuda":
+        torch.backends.cuda.matmul.allow_tf32 = True
+        torch.backends.cudnn.benchmark = True
 
-if device.type == "cuda":
-    torch.backends.cuda.matmul.allow_tf32 = True
-    torch.backends.cudnn.benchmark = True
+    return model, tokenizer
 
-# ------------------------------
-# Pipeline
-# ------------------------------
-generator = pipeline(
-    "text-generation",
-    model=model,
-    tokenizer=tokenizer,
-    device=0 if device.type == "cuda" else -1
-)
+
+# ============================================================
+# Pipeline Setup
+# ============================================================
+def make_generator(model, tokenizer, device):
+    generator = pipeline(
+        "text-generation",
+        model=model,
+        tokenizer=tokenizer,
+        device=0 if device.type == "cuda" else -1
+    )
+    return generator
+
 
 # ============================================================
 # Chat System with History
 # ============================================================
 chat_history = []
+system_prompt = "You are a helpful AI assistant. Answer clearly and politely."
 
 def build_prompt(user_message: str) -> str:
     """
-    Build the prompt including system message + chat history.
+    Build the full prompt with system message + history + user input.
     """
     full_prompt = system_prompt + "\n\n"
     for role, msg in chat_history:
@@ -64,7 +75,8 @@ def build_prompt(user_message: str) -> str:
     full_prompt += f"User: {user_message}\nAssistant:"
     return full_prompt
 
-def chat(user_message: str,
+
+def chat(generator, tokenizer, user_message: str,
          max_new_tokens=200,
          temperature=0.8,
          top_k=50,
@@ -73,10 +85,9 @@ def chat(user_message: str,
          num_beams=1,
          no_repeat_ngram_size=3):
     """
-    Run one round of chat with history and save conversation.
+    Run one round of chat, track history, and return assistant response.
     """
     global chat_history
-
     prompt = build_prompt(user_message)
 
     gen_kwargs = {
@@ -104,32 +115,40 @@ def chat(user_message: str,
     print(f"🤖 Assistant: {response}\n")
     return response
 
-# ============================================================
-# Example Interactive Chat Loop (run in a cell)
-# ============================================================
-"""
-Run this cell in notebook to chat interactively:
-
-while True:
-    msg = input("You: ")
-    if msg.lower() in ["exit", "quit"]:
-        break
-    chat(msg)
-"""
 
 # ============================================================
-# Saving Chat History (JSON / TXT)
+# Saving / Loading Chat History
 # ============================================================
-import json
-
 def save_chat(filename="chat_history.json"):
     with open(filename, "w") as f:
         json.dump(chat_history, f, indent=2)
     print(f"💾 Chat history saved to {filename}")
+
 
 def load_chat(filename="chat_history.json"):
     global chat_history
     with open(filename, "r") as f:
         chat_history = json.load(f)
     print(f"📂 Chat history loaded from {filename}")
+
+
+# ============================================================
+# Example Interactive Chat Loop (for notebook/CLI)
+# ============================================================
+"""
+Example usage in notebook:
+
+from chat_template import *
+
+device = setup_device()
+model, tokenizer = load_model_and_tokenizer("EleutherAI/gpt-neo-125M", device)
+generator = make_generator(model, tokenizer, device)
+
+while True:
+    msg = input("You: ")
+    if msg.lower() in ["exit", "quit"]:
+        break
+    chat(generator, tokenizer, msg)
+"""
+
 
